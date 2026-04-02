@@ -1,0 +1,15 @@
+[package]
+name = "saddle-world-hex-grid-example-basic"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = "0.18"
+saddle-world-hex-grid = { path = "../.." }
+saddle-world-hex-grid-example-support = { path = "../support" }
+
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+nonstandard_macro_braces = "warn"
