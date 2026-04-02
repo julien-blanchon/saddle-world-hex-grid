@@ -1,5 +1,5 @@
 use bevy::{math::Vec2, prelude::*};
-use saddle_saddle_bevy_e2e::{action::Action, actions::assertions, scenario::Scenario};
+use saddle_bevy_e2e::{action::Action, actions::assertions, scenario::Scenario};
 
 use crate::LabControl;
 use saddle_world_hex_grid::AxialHex;
