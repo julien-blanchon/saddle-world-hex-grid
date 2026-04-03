@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use saddle_pane::prelude::*;
 use saddle_world_hex_grid::{AxialHex, HexLayout, HexOrientation};
 use std::{collections::HashMap, f32::consts::FRAC_PI_6};
 
@@ -19,6 +20,35 @@ pub struct DemoHexCell {
 
 #[derive(Component)]
 pub struct OverlayText;
+
+#[derive(Resource, Pane)]
+#[pane(title = "Hex Grid")]
+pub struct HexExamplePane {
+    #[pane(slider, min = 16.0, max = 52.0, step = 1.0)]
+    pub hex_size: f32,
+}
+
+impl Default for HexExamplePane {
+    fn default() -> Self {
+        Self { hex_size: 32.0 }
+    }
+}
+
+pub fn pane_plugins() -> (
+    bevy_flair::FlairPlugin,
+    bevy_input_focus::InputDispatchPlugin,
+    bevy_ui_widgets::UiWidgetsPlugins,
+    bevy_input_focus::tab_navigation::TabNavigationPlugin,
+    saddle_pane::PanePlugin,
+) {
+    (
+        bevy_flair::FlairPlugin,
+        bevy_input_focus::InputDispatchPlugin,
+        bevy_ui_widgets::UiWidgetsPlugins,
+        bevy_input_focus::tab_navigation::TabNavigationPlugin,
+        saddle_pane::PanePlugin,
+    )
+}
 
 #[derive(Clone, Debug)]
 pub struct DemoBoard {
@@ -65,6 +95,25 @@ pub fn board_cell_transform(layout: HexLayout, hex: AxialHex) -> Transform {
             layout.hex_size.y * 0.92,
             1.0,
         ))
+}
+
+pub fn apply_hex_size<F: bevy::ecs::query::QueryFilter>(
+    board: &mut DemoBoard,
+    hex_size: f32,
+    transforms: &mut Query<&mut Transform, F>,
+) {
+    if (board.layout.hex_size.x - hex_size).abs() <= f32::EPSILON
+        && (board.layout.hex_size.y - hex_size).abs() <= f32::EPSILON
+    {
+        return;
+    }
+
+    board.layout = board.layout.with_uniform_size(hex_size);
+    for (hex, entity) in &board.cells {
+        if let Ok(mut transform) = transforms.get_mut(*entity) {
+            *transform = board_cell_transform(board.layout, *hex);
+        }
+    }
 }
 
 pub fn board_rotation(orientation: HexOrientation) -> Quat {

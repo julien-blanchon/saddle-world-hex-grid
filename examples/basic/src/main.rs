@@ -1,6 +1,7 @@
 use saddle_world_hex_grid_example_support as support;
 
 use bevy::prelude::*;
+use saddle_pane::prelude::*;
 use saddle_world_hex_grid::{AxialHex, HexLayout};
 use support::{BoardKind, DemoBoard, DemoHexCell, OverlayText};
 
@@ -23,8 +24,10 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(support::pane_plugins())
+        .register_pane::<support::HexExamplePane>()
         .add_systems(Startup, setup)
-        .add_systems(Update, update_hover)
+        .add_systems(Update, (sync_pane, update_hover))
         .run();
 }
 
@@ -114,4 +117,12 @@ fn update_hover(
         text.0 = "Move the cursor across the board.\nHovered hex: outside the board".to_string();
         demo.hovered_hex = None;
     }
+}
+
+fn sync_pane(
+    pane: Res<support::HexExamplePane>,
+    mut demo: ResMut<BasicDemo>,
+    mut transforms: Query<&mut Transform>,
+) {
+    support::apply_hex_size(&mut demo.board, pane.hex_size, &mut transforms);
 }

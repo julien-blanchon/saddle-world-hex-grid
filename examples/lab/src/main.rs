@@ -6,6 +6,7 @@ mod scenarios;
 use saddle_world_hex_grid_example_support as support;
 
 use bevy::prelude::*;
+use saddle_pane::prelude::*;
 #[cfg(feature = "dev")]
 use bevy::remote::RemotePlugin;
 #[cfg(feature = "dev")]
@@ -55,6 +56,42 @@ impl Default for LabControl {
     }
 }
 
+#[derive(Resource, Pane)]
+#[pane(title = "Hex Grid Lab")]
+struct LabPane {
+    #[pane(slider, min = 18.0, max = 40.0, step = 1.0)]
+    hex_size: f32,
+    #[pane(slider, min = -120.0, max = 120.0, step = 1.0)]
+    sample_x: f32,
+    #[pane(slider, min = -120.0, max = 120.0, step = 1.0)]
+    sample_y: f32,
+    #[pane(slider, min = -5.0, max = 5.0, step = 1.0)]
+    goal_q: f32,
+    #[pane(slider, min = -5.0, max = 5.0, step = 1.0)]
+    goal_r: f32,
+    #[pane(toggle)]
+    reroute_barrier_enabled: bool,
+    #[pane(slider, min = 1.0, max = 10.0, step = 1.0)]
+    movement_budget: f32,
+    #[pane(slider, min = 1.0, max = 6.0, step = 1.0)]
+    range_radius: f32,
+}
+
+impl Default for LabPane {
+    fn default() -> Self {
+        Self {
+            hex_size: 25.0,
+            sample_x: 34.0,
+            sample_y: -8.0,
+            goal_q: 3.0,
+            goal_r: -2.0,
+            reroute_barrier_enabled: false,
+            movement_budget: 4.0,
+            range_radius: 3.0,
+        }
+    }
+}
+
 #[derive(Resource, Reflect, Clone, Debug, Default)]
 #[reflect(Resource)]
 pub struct LabDiagnostics {
@@ -91,6 +128,7 @@ fn main() {
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.10)));
     app.insert_resource(LabControl::default());
+    app.insert_resource(LabPane::default());
     app.insert_resource(LabDiagnostics::default());
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -100,6 +138,7 @@ fn main() {
         }),
         ..default()
     }));
+    app.add_plugins(support::pane_plugins());
     #[cfg(feature = "dev")]
     app.add_plugins(RemotePlugin::default());
     #[cfg(feature = "dev")]
@@ -117,8 +156,9 @@ fn main() {
     );
     app.register_type::<LabControl>()
         .register_type::<LabDiagnostics>()
+        .register_pane::<LabPane>()
         .add_systems(Startup, setup)
-        .add_systems(Update, update_lab);
+        .add_systems(Update, (sync_lab_pane, update_lab));
     app.run();
 }
 
@@ -396,6 +436,42 @@ fn update_lab(
         diagnostics.ring_count,
         diagnostics.spiral_count,
     );
+}
+
+fn sync_lab_pane(
+    pane: Res<LabPane>,
+    mut control: ResMut<LabControl>,
+    mut scene: ResMut<LabScene>,
+    mut cell_transforms: Query<&mut Transform, With<DemoHexCell>>,
+    mut overlays: Query<&mut HexDebugOverlay>,
+) {
+    if !pane.is_changed() {
+        return;
+    }
+
+    control.sample_local_point = Vec2::new(pane.sample_x, pane.sample_y);
+    control.path_goal = AxialHex::new(pane.goal_q.round() as i32, pane.goal_r.round() as i32);
+    control.reroute_barrier_enabled = pane.reroute_barrier_enabled;
+    control.movement_budget = pane.movement_budget.round().max(1.0) as u32;
+    control.range_radius = pane.range_radius.round().max(1.0) as u32;
+
+    support::apply_hex_size(&mut scene.flat, pane.hex_size, &mut cell_transforms);
+    support::apply_hex_size(&mut scene.pointy, pane.hex_size, &mut cell_transforms);
+    support::apply_hex_size(&mut scene.path, pane.hex_size, &mut cell_transforms);
+    support::apply_hex_size(&mut scene.range, pane.hex_size, &mut cell_transforms);
+
+    if let Ok(mut overlay) = overlays.get_mut(scene.flat_overlay) {
+        overlay.layout = scene.flat.layout;
+    }
+    if let Ok(mut overlay) = overlays.get_mut(scene.pointy_overlay) {
+        overlay.layout = scene.pointy.layout;
+    }
+    if let Ok(mut overlay) = overlays.get_mut(scene.path_overlay) {
+        overlay.layout = scene.path.layout;
+    }
+    if let Ok(mut overlay) = overlays.get_mut(scene.range_overlay) {
+        overlay.layout = scene.range.layout;
+    }
 }
 
 fn path_blocked_cells(reroute_barrier_enabled: bool) -> HashSet<AxialHex> {

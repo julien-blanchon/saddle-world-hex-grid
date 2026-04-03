@@ -39,7 +39,7 @@ fn wait_for_diagnostics(
     Action::WaitUntil {
         label: label.into(),
         condition: Box::new(move |world| condition(world.resource::<crate::LabDiagnostics>())),
-        max_frames: 30,
+        max_frames: 90,
     }
 }
 

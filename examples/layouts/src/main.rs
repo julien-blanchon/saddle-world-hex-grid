@@ -1,6 +1,7 @@
 use saddle_world_hex_grid_example_support as support;
 
 use bevy::prelude::*;
+use saddle_pane::prelude::*;
 use saddle_world_hex_grid::{AxialHex, HexLayout};
 use support::{BoardKind, DemoBoard, DemoHexCell, OverlayText};
 
@@ -28,8 +29,10 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(support::pane_plugins())
+        .register_pane::<support::HexExamplePane>()
         .add_systems(Startup, setup)
-        .add_systems(Update, animate_layouts)
+        .add_systems(Update, (sync_pane, animate_layouts))
         .run();
 }
 
@@ -134,4 +137,13 @@ fn animate_layouts(
         "Two boards use the same local sample offset.\nLocal sample: ({:.1}, {:.1})\nFlat-top -> ({}, {})\nPointy-top -> ({}, {})",
         local.x, local.y, flat_hex.q, flat_hex.r, pointy_hex.q, pointy_hex.r,
     );
+}
+
+fn sync_pane(
+    pane: Res<support::HexExamplePane>,
+    mut demo: ResMut<LayoutsDemo>,
+    mut transforms: Query<&mut Transform>,
+) {
+    support::apply_hex_size(&mut demo.flat, pane.hex_size, &mut transforms);
+    support::apply_hex_size(&mut demo.pointy, pane.hex_size, &mut transforms);
 }

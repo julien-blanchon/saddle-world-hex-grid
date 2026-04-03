@@ -5,8 +5,12 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = "0.18"
-saddle-world-hex-grid = { path = "../.." }
+bevy = { workspace = true }
+saddle-world-hex-grid = { workspace = true }
+saddle-pane = { workspace = true }
+bevy_flair = { workspace = true }
+bevy_input_focus = { workspace = true }
+bevy_ui_widgets = { workspace = true }
 
 [lints.clippy]
 too_many_arguments = "allow"
