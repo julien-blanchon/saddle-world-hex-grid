@@ -180,6 +180,8 @@ The architecture leaves room for these later, but the initial crate keeps the du
 | `pathfinding` | weighted A* over caller-owned blocked and weighted cells |
 | `saddle-world-hex-grid-lab` | richer crate-local showcase with BRP and E2E verification |
 
+Every shipped example now includes a live `saddle-pane` size control so layout changes and picking behavior can be inspected interactively.
+
 Run them with:
 
 ```bash

@@ -4,6 +4,7 @@ use bevy::{
     input::{ButtonState, mouse::MouseButtonInput},
     prelude::*,
 };
+use saddle_pane::prelude::*;
 use saddle_world_hex_grid::{AxialHex, HexLayout, HexPath, a_star};
 use std::collections::HashSet;
 use support::{BoardKind, DemoBoard, DemoHexCell, OverlayText};
@@ -25,6 +26,7 @@ struct PathfindingDemo {
 
 fn main() {
     App::new()
+        .insert_resource(support::HexExamplePane { hex_size: 28.0 })
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "hex_grid pathfinding".into(),
@@ -33,8 +35,10 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(support::pane_plugins())
+        .register_pane::<support::HexExamplePane>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (update_hover, handle_clicks, repaint_path))
+        .add_systems(Update, (sync_pane, update_hover, handle_clicks, repaint_path))
         .run();
 }
 
@@ -191,4 +195,12 @@ fn current_path(demo: &PathfindingDemo, goal: AxialHex) -> Option<HexPath> {
             Some(1)
         }
     })
+}
+
+fn sync_pane(
+    pane: Res<support::HexExamplePane>,
+    mut demo: ResMut<PathfindingDemo>,
+    mut transforms: Query<&mut Transform>,
+) {
+    support::apply_hex_size(&mut demo.board, pane.hex_size, &mut transforms);
 }

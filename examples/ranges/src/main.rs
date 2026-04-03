@@ -1,6 +1,7 @@
 use saddle_world_hex_grid_example_support as support;
 
 use bevy::prelude::*;
+use saddle_pane::prelude::*;
 use saddle_world_hex_grid::{AxialHex, HexLayout, reachable_within};
 use std::collections::HashSet;
 use support::{BoardKind, DemoBoard, DemoHexCell, OverlayText};
@@ -25,8 +26,10 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(support::pane_plugins())
+        .register_pane::<support::HexExamplePane>()
         .add_systems(Startup, setup)
-        .add_systems(Update, update_ranges)
+        .add_systems(Update, (sync_pane, update_ranges))
         .run();
 }
 
@@ -118,4 +121,12 @@ fn update_ranges(
         spiral.len(),
         demo.weighted_cells,
     );
+}
+
+fn sync_pane(
+    pane: Res<support::HexExamplePane>,
+    mut demo: ResMut<RangeDemo>,
+    mut transforms: Query<&mut Transform>,
+) {
+    support::apply_hex_size(&mut demo.board, pane.hex_size, &mut transforms);
 }
