@@ -151,6 +151,7 @@ fn main() {
             draw_centers: true,
             draw_cell_outlines: true,
             draw_path_lines: true,
+            draw_coord_labels: false,
             center_radius: 4.0,
         }),
     );

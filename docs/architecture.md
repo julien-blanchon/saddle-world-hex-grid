@@ -114,8 +114,49 @@ Current iterator families:
 - parallelograms
 - offset-projected rectangles
 - doubled-projected rectangles
+- triangles
+- wedges (arc sectors between two directions)
 
 The crate still offers convenience constructors such as `hexagon(...)`, but the iterator-first design keeps hot paths lighter and leaves allocation choices to the caller.
+
+## Field of view architecture
+
+The crate provides two FOV functions: `range_fov` (360-degree) and `directional_fov` (120-degree cone).
+
+### Algorithm
+
+Both use raycasting from the origin to the perimeter ring at the given range:
+
+1. Enumerate every hex on the ring at distance `range` from the origin
+2. For each perimeter hex, cast a line (using `line_to`) from origin to that hex
+3. Walk the line; if a hex is blocking, include it but stop the ray
+
+This is a simple, predictable approach that handles concave obstacles well. The trade-off is that perimeter size grows linearly with range, so very large ranges cast many rays. For typical game ranges (1–10), this is negligible.
+
+### Directional FOV
+
+`directional_fov` filters the perimeter ring to only include hexes within the 120-degree cone facing the given direction. It uses `diagonal_way` to classify each perimeter hex into a diagonal sector and only casts rays into the matching sector.
+
+### Closure ownership
+
+Like pathfinding, FOV is caller-owned: the `is_blocking` closure decides which hexes block line of sight. This keeps the FOV independent of any specific map storage.
+
+## Bounds architecture
+
+`HexBounds` is a lightweight circular bounds type (center + radius) for quick containment checks, iteration, and overlap tests without allocating a set. It also supports `wrap` for toroidal/repeating maps.
+
+## Dense storage architecture
+
+`HexagonalMap<T>` provides O(1) indexed storage over a hexagonal region. Internally it uses a flat `Vec<T>` with row-by-row indexing. Each row of a hexagonal region has a known length, so the index for any `(q, r)` pair is computed by accumulating row lengths up to the target row, then offsetting within that row. This gives cache-friendly iteration and constant-time random access.
+
+## Grid topology architecture
+
+`GridEdge` and `GridVertex` represent the edges and vertices of the hex grid in canonical form. Canonical form ensures that two constructions of the same geometric feature (from different hexes) always produce the same struct value, enabling use as `HashMap` keys or in sets.
+
+- `GridEdge` picks the lexicographically smaller hex and adjusts the direction accordingly
+- `GridVertex` picks the lexicographically smallest of the three hexes sharing the vertex
+
+These types are useful for strategy and building games that need to reason about hex borders (rivers, walls, roads) and corners (cities, intersections).
 
 ## Plugin and debug architecture
 
@@ -143,6 +184,7 @@ The plugin is intentionally thin and optional.
 - cells
 - highlighted cells
 - path cells
+- FOV cells
 - colors
 
 The runtime system caches corner and path geometry into an internal component, then draws with `bevy_gizmos` if the user has initialized the gizmo group. This keeps the public overlay surface simple while avoiding recomputing corners every frame for unchanged overlays.
@@ -182,11 +224,10 @@ Borrowed ideas:
 - `hexx`: broad shape coverage, movement-field framing, and the reminder that storage should stay caller-owned
 - Catlike Coding: practical weighted pathfinding concerns and large-map thinking
 
-Rejected for `0.1.0`:
+Rejected for now:
 
-- wraparound maps
+- wraparound maps (beyond the simple `HexBounds::wrap`)
 - chunk coordinates
-- field-of-view
 - mesh generation helpers beyond corners and edge midpoints
 - a built-in ECS tile map or world representation
 

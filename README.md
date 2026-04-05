@@ -1,8 +1,8 @@
 # Saddle World Hex Grid
 
-Hexagonal grid math, layout conversion, iterators, and traversal helpers for Bevy.
+Hexagonal grid math, layout conversion, iterators, field of view, pathfinding, dense storage, and grid topology helpers for Bevy.
 
-The crate stays math-first: coordinate conversion, neighbors, distance, rings, spirals, pathfinding, and movement budgets work in ordinary Rust code without starting a Bevy app. The plugin is optional and only owns the runtime-facing debug overlay surface.
+The crate stays math-first: coordinate conversion, neighbors, distance, rings, spirals, FOV, pathfinding, and movement budgets work in ordinary Rust code without starting a Bevy app. The plugin is optional and only owns the runtime-facing debug overlay surface.
 
 ## Why this crate exists
 
@@ -13,6 +13,7 @@ The crate stays math-first: coordinate conversion, neighbors, distance, rings, s
 - procgen and map editors
 - district or influence radius tools
 - hybrid 2D or 3D games that need world-space picking over a hex lattice
+- turn-based games needing movement ranges, attack ranges, and field of view
 
 It borrows concepts from Red Blob Games' hex grid guides, `hexx`, and Catlike Coding's hex map tutorials, but reimplements the coordinate and traversal code directly to keep the API small, project-agnostic, and Bevy-friendly.
 
@@ -89,21 +90,36 @@ Orientation is always explicit in world-space conversion. The same `AxialHex` re
 
 ### Directions and local steps
 
-- `HexDirection`
-- `HexDiagonalDirection`
+- `HexDirection` — 6 face-adjacent directions with rotation, negation, `angle()`, `unit_vector()`, `vertex_directions()`, `from_angle()`
+- `HexDiagonalDirection` — 6 diagonal directions with rotation, opposite, index
+
+### Distance operations
+
+- `distance_to(other)` — Manhattan (hex) distance
+- `distance_sq_to(other)` — squared Euclidean distance (no sqrt, useful for comparisons)
+- `euclidean_distance_to(other)` — Euclidean distance between hex centers
 
 ### Iterators and shape helpers
 
 - `line_to`
-- `range`
+- `range` / `hexagon`
 - `ring`
 - `spiral`
-- `hexagon`
 - `parallelogram`
 - `offset_rectangle`
 - `doubled_rectangle`
+- `triangle`
+- `wedge`
 
 The iterator-based API keeps most shape queries allocation-light. Collect into a `Vec` only when you need ownership.
+
+### Field of view
+
+- `range_fov(origin, range, is_blocking)` — 360-degree FOV using raycasting to the perimeter ring
+- `directional_fov(origin, range, direction, is_blocking)` — 120-degree directional cone FOV
+- `DiagonalWay` — result type for diagonal direction queries
+
+FOV is caller-owned: provide a closure that decides which hexes block line of sight. Blocking hexes are included in the result (you can see a wall, but not past it).
 
 ### Pathfinding and movement range
 
@@ -120,6 +136,21 @@ Traversal is storage-agnostic. The caller owns map storage and terrain rules. Th
 
 This separation keeps the core reusable for `HashMap`, arrays, ECS-backed worlds, editor tools, or generated maps.
 
+### Bounds
+
+- `HexBounds` — circular bounds with `contains`, `hex_count`, `iter`, `intersects`, `wrap`
+
+### Dense storage
+
+- `HexagonalMap<T>` — O(1) indexed dense storage over a hexagonal region, backed by a flat `Vec`
+
+### Grid topology
+
+- `GridEdge` — canonical edge between two adjacent hexes, with `hexes()` and `vertices()`
+- `GridVertex` — canonical vertex shared by three hexes, with `hexes()` and `edges()`
+
+Useful for strategy/building games that need to reason about hex borders and corners (rivers along edges, cities at vertices, etc.).
+
 ## Plugin and debug surface
 
 The plugin is intentionally thin:
@@ -130,7 +161,7 @@ The plugin is intentionally thin:
 - `HexDebugOverlay`
 - `HexGridDebugGizmos`
 
-Use the plugin when you want runtime gizmo overlays for centers, outlines, highlighted cells, or path previews. Skip it entirely if you only need math and traversal.
+Use the plugin when you want runtime gizmo overlays for centers, outlines, highlighted cells, FOV regions, or path previews. Skip it entirely if you only need math and traversal.
 
 The plugin initializes its own `HexGridDebugGizmos` group, so `HexDebugOverlay` works out of the box once the plugin is added and debug drawing is enabled.
 
@@ -158,18 +189,6 @@ Adapters:
 
 `AxialHex` is the main public workhorse because it is compact, readable, and cheap to convert. `CubeHex` stays first-class because distance, interpolation, and invariant-sensitive algorithms are easier to reason about in cube space. Offset and doubled forms exist for interoperability and storage layout, not as the core algorithm surface.
 
-## Deferred features
-
-Deliberately not included in `0.1.0`:
-
-- wraparound or toroidal maps
-- chunk or region coordinates
-- field-of-view or visibility solvers
-- canonical global ordering for `Ord`
-- built-in map storage containers
-
-The architecture leaves room for these later, but the initial crate keeps the durable primitives small.
-
 ## Examples
 
 | Example | Focus |
@@ -178,9 +197,11 @@ The architecture leaves room for these later, but the initial crate keeps the du
 | `layouts` | flat-top vs pointy-top layout conversion using the same local sample point |
 | `ranges` | reachable-within, exact rings, and spiral traversal overlays |
 | `pathfinding` | weighted A* over caller-owned blocked and weighted cells |
+| `fov` | interactive field of view with walls, 360 and directional modes |
+| `strategy` | terrain types, movement ranges, attack ranges, path preview |
 | `saddle-world-hex-grid-lab` | richer crate-local showcase with BRP and E2E verification |
 
-Every shipped example now includes a live `saddle-pane` size control so layout changes and picking behavior can be inspected interactively.
+Every shipped example includes a live `saddle-pane` control so layout changes and parameters can be inspected interactively.
 
 Run them with:
 
@@ -189,6 +210,8 @@ cargo run -p saddle-world-hex-grid-example-basic
 cargo run -p saddle-world-hex-grid-example-layouts
 cargo run -p saddle-world-hex-grid-example-ranges
 cargo run -p saddle-world-hex-grid-example-pathfinding
+cargo run -p saddle-world-hex-grid-example-fov
+cargo run -p saddle-world-hex-grid-example-strategy
 cargo run -p saddle-world-hex-grid-lab
 ```
 

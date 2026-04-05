@@ -1,0 +1,16 @@
+[package]
+name = "saddle-world-hex-grid-example-fov"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { workspace = true }
+saddle-world-hex-grid = { workspace = true }
+saddle-pane = { workspace = true }
+saddle-world-hex-grid-example-support = { path = "../support" }
+
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+nonstandard_macro_braces = "warn"

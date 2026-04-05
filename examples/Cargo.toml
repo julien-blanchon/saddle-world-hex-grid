@@ -5,6 +5,8 @@ members = [
     "layouts",
     "ranges",
     "pathfinding",
+    "fov",
+    "strategy",
     "lab",
 ]
 resolver = "3"

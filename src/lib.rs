@@ -1,22 +1,31 @@
 mod algorithms;
+mod bounds;
 mod coords;
 mod debug;
 mod direction;
+mod fov;
 mod layout;
 mod pathfinding;
+mod storage;
+mod topology;
 
 pub use algorithms::{
     DoubledRectangleIter, LineIter, OffsetRectangleIter, ParallelogramIter, RangeIter, RingIter,
-    SpiralIter, doubled_rectangle, offset_rectangle, parallelogram,
+    SpiralIter, TriangleIter, WedgeIter, doubled_rectangle, offset_rectangle, parallelogram,
+    triangle, wedge,
 };
+pub use bounds::HexBounds;
 pub use coords::{
     AxialHex, CubeHex, DoubledHex, DoubledHexMode, FractionalHex, HexInvariantError, OffsetHex,
     OffsetHexMode,
 };
 pub use debug::{HexDebugOverlay, HexGridDebugGizmos, HexGridDebugSettings};
 pub use direction::{HexDiagonalDirection, HexDirection};
+pub use fov::{DiagonalWay, directional_fov, range_fov};
 pub use layout::{HexLayout, HexOrientation};
 pub use pathfinding::{HexPath, HexReachability, a_star, reachable_within};
+pub use storage::HexagonalMap;
+pub use topology::{GridEdge, GridVertex};
 
 use bevy::{
     app::PostStartup,
@@ -92,6 +101,7 @@ impl Plugin for HexGridPlugin {
             .register_type::<DoubledHex>()
             .register_type::<DoubledHexMode>()
             .register_type::<FractionalHex>()
+            .register_type::<HexBounds>()
             .register_type::<HexDebugOverlay>()
             .register_type::<HexGridDebugSettings>()
             .register_type::<HexDirection>()
@@ -100,6 +110,8 @@ impl Plugin for HexGridPlugin {
             .register_type::<HexOrientation>()
             .register_type::<OffsetHex>()
             .register_type::<OffsetHexMode>()
+            .register_type::<GridEdge>()
+            .register_type::<GridVertex>()
             .configure_sets(
                 self.update_schedule,
                 (HexGridSystems::SyncDebug, HexGridSystems::DrawDebug).chain(),

@@ -14,6 +14,7 @@ pub struct HexGridDebugSettings {
     pub draw_centers: bool,
     pub draw_cell_outlines: bool,
     pub draw_path_lines: bool,
+    pub draw_coord_labels: bool,
     pub center_radius: f32,
 }
 
@@ -24,6 +25,7 @@ impl Default for HexGridDebugSettings {
             draw_centers: true,
             draw_cell_outlines: true,
             draw_path_lines: true,
+            draw_coord_labels: false,
             center_radius: 6.0,
         }
     }
@@ -35,9 +37,12 @@ pub struct HexDebugOverlay {
     pub cells: Vec<AxialHex>,
     pub highlighted: Vec<AxialHex>,
     pub path: Vec<AxialHex>,
+    /// Cells visible via FOV — drawn as filled outlines in `fov_color`.
+    pub fov_cells: Vec<AxialHex>,
     pub cell_color: Color,
     pub highlight_color: Color,
     pub path_color: Color,
+    pub fov_color: Color,
 }
 
 impl Default for HexDebugOverlay {
@@ -47,9 +52,11 @@ impl Default for HexDebugOverlay {
             cells: Vec::new(),
             highlighted: Vec::new(),
             path: Vec::new(),
+            fov_cells: Vec::new(),
             cell_color: Color::srgba(0.55, 0.72, 0.94, 0.85),
             highlight_color: Color::srgba(0.98, 0.76, 0.25, 0.95),
             path_color: Color::srgba(0.20, 0.93, 0.55, 0.95),
+            fov_color: Color::srgba(0.95, 0.85, 0.30, 0.65),
         }
     }
 }
@@ -59,6 +66,7 @@ pub(crate) struct HexDebugOverlayState {
     cells: Vec<[Vec2; 6]>,
     highlighted: Vec<[Vec2; 6]>,
     path_centers: Vec<Vec2>,
+    fov: Vec<[Vec2; 6]>,
 }
 
 pub(crate) fn sync_debug_overlays(
@@ -87,6 +95,12 @@ pub(crate) fn sync_debug_overlays(
                 .iter()
                 .copied()
                 .map(|hex| overlay.layout.hex_to_world(hex))
+                .collect(),
+            fov: overlay
+                .fov_cells
+                .iter()
+                .copied()
+                .map(|hex| overlay.layout.corners(hex))
                 .collect(),
         };
         commands.entity(entity).insert(state);
@@ -134,6 +148,12 @@ pub(crate) fn draw_debug(world: &mut World) {
                     settings.center_radius * 1.2,
                     overlay.highlight_color,
                 );
+            }
+        }
+
+        if settings.draw_cell_outlines {
+            for corners in &cached.fov {
+                draw_outline(&mut gizmos, corners, overlay.fov_color);
             }
         }
 

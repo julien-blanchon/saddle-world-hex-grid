@@ -1,6 +1,30 @@
 use crate::{AxialHex, DoubledHex, DoubledHexMode, FractionalHex, HexDirection, OffsetHexMode};
 use std::ops::RangeInclusive;
 
+/// Generates a triangle-shaped region.
+///
+/// For `side_length` = 3, generates a triangle with 3 rows:
+/// - row 0: 1 hex
+/// - row 1: 2 hexes
+/// - row 2: 3 hexes
+pub fn triangle(side_length: u32) -> TriangleIter {
+    TriangleIter::new(side_length)
+}
+
+/// Generates hexes forming a wedge (partial ring arc) from `center`.
+///
+/// A wedge includes all hexes at exactly `radius` distance from `center`
+/// that lie between `start_direction` and `end_direction` (inclusive),
+/// walking clockwise.
+pub fn wedge(
+    center: AxialHex,
+    radius: u32,
+    start_direction: HexDirection,
+    end_direction: HexDirection,
+) -> WedgeIter {
+    WedgeIter::new(center, radius, start_direction, end_direction)
+}
+
 pub fn parallelogram(
     origin: AxialHex,
     q_range: RangeInclusive<i32>,
@@ -398,6 +422,146 @@ impl Iterator for DoubledRectangleIter {
             };
             return Some(doubled.to_axial(self.mode));
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TriangleIter {
+    side_length: i32,
+    current_r: i32,
+    current_q: i32,
+}
+
+impl TriangleIter {
+    pub fn new(side_length: u32) -> Self {
+        Self {
+            side_length: side_length as i32,
+            current_r: 0,
+            current_q: 0,
+        }
+    }
+}
+
+impl Iterator for TriangleIter {
+    type Item = AxialHex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_r >= self.side_length {
+            return None;
+        }
+
+        let hex = AxialHex::new(self.current_q, self.current_r);
+
+        if self.current_q < self.current_r {
+            self.current_q += 1;
+        } else {
+            self.current_r += 1;
+            self.current_q = 0;
+        }
+
+        Some(hex)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WedgeIter {
+    center: AxialHex,
+    radius: u32,
+    current: AxialHex,
+    side: usize,
+    step: u32,
+    end_side: usize,
+    end_step: u32,
+    finished: bool,
+    yielded_zero: bool,
+}
+
+impl WedgeIter {
+    pub fn new(
+        center: AxialHex,
+        radius: u32,
+        start_direction: HexDirection,
+        end_direction: HexDirection,
+    ) -> Self {
+        if radius == 0 {
+            return Self {
+                center,
+                radius: 0,
+                current: center,
+                side: 0,
+                step: 0,
+                end_side: 0,
+                end_step: 0,
+                finished: false,
+                yielded_zero: false,
+            };
+        }
+
+        let start_idx = start_direction.index();
+        // Start position: move from center in the direction before `start_direction`
+        // (the ring starts at the SouthWest corner and walks CW through the 6 sides)
+        // We need to find which side/step on the ring corresponds to start_direction
+        let start_side = (start_idx + 4) % 6; // Adjust for ring starting at SouthWest
+        let end_idx = end_direction.index();
+        let end_side = (end_idx + 4) % 6;
+
+        // Starting position on the ring
+        let mut pos = center + HexDirection::SouthWest.vector() * radius as i32;
+        for s in 0..start_side {
+            pos += HexDirection::ALL[s].vector() * radius as i32;
+        }
+
+        Self {
+            center,
+            radius,
+            current: pos,
+            side: start_side,
+            step: 0,
+            end_side,
+            end_step: radius.saturating_sub(1),
+            finished: false,
+            yielded_zero: false,
+        }
+    }
+}
+
+impl Iterator for WedgeIter {
+    type Item = AxialHex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.radius == 0 {
+            if self.yielded_zero {
+                return None;
+            }
+            self.yielded_zero = true;
+            return Some(self.center);
+        }
+
+        if self.finished {
+            return None;
+        }
+
+        let hex = self.current;
+
+        // Check if we've reached the end
+        if self.side == self.end_side && self.step >= self.end_step {
+            self.finished = true;
+        }
+
+        // Advance
+        let direction = HexDirection::ALL[self.side % 6];
+        self.current += direction.vector();
+        self.step += 1;
+
+        if self.step >= self.radius {
+            self.step = 0;
+            self.side += 1;
+            if self.side >= 6 + self.end_side {
+                self.finished = true;
+            }
+        }
+
+        Some(hex)
     }
 }
 

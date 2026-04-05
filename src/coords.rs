@@ -119,6 +119,7 @@ impl AxialHex {
         self.distance_to(Self::ZERO)
     }
 
+    /// Manhattan (hex) distance — the minimum number of steps between two hexes.
     pub fn distance_to(self, other: Self) -> u32 {
         let delta = self - other;
         delta
@@ -126,6 +127,23 @@ impl AxialHex {
             .unsigned_abs()
             .max(delta.r.unsigned_abs())
             .max(delta.s().unsigned_abs())
+    }
+
+    /// Squared Euclidean distance between two hex centers.
+    ///
+    /// Cheaper than [`euclidean_distance_to`](Self::euclidean_distance_to) because
+    /// it avoids a square root. Useful for distance comparisons.
+    pub fn distance_sq_to(self, other: Self) -> f32 {
+        let dq = (self.q - other.q) as f32;
+        let dr = (self.r - other.r) as f32;
+        // In axial coords, the squared Euclidean distance (unit hex size) is:
+        // dq^2 + dq*dr + dr^2
+        dq * dq + dq * dr + dr * dr
+    }
+
+    /// Euclidean distance between two hex centers (in hex-unit space).
+    pub fn euclidean_distance_to(self, other: Self) -> f32 {
+        self.distance_sq_to(other).sqrt()
     }
 
     pub fn rotate_cw(self, steps: i32) -> Self {
@@ -154,6 +172,14 @@ impl AxialHex {
 
     pub fn reflect_s(self) -> Self {
         Self::from(self.to_cube().reflect_s())
+    }
+
+    /// Determines which diagonal direction `other` lies in relative to `self`.
+    ///
+    /// Returns a [`DiagonalWay`] indicating either a single diagonal direction
+    /// or a tie between two directions when the hex is on a sector boundary.
+    pub fn diagonal_way_to(self, other: Self) -> crate::fov::DiagonalWay {
+        crate::fov::diagonal_way(self, other)
     }
 
     pub fn line_to(self, target: Self) -> LineIter {
