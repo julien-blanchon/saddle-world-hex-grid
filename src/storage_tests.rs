@@ -43,6 +43,18 @@ fn hexagonal_map_iter_visits_all_hexes() {
 }
 
 #[test]
+fn hexagonal_map_iter_mut_updates_in_place_without_losing_coordinates() {
+    let mut map = HexagonalMap::with_default(AxialHex::new(2, -1), 2);
+    for (hex, value) in map.iter_mut() {
+        *value = hex.q - hex.r;
+    }
+
+    for (hex, value) in map.iter() {
+        assert_eq!(*value, hex.q - hex.r);
+    }
+}
+
+#[test]
 fn hexagonal_map_contains_works() {
     let map = HexagonalMap::<()>::new(AxialHex::ZERO, 2, |_| ());
     assert!(map.contains(AxialHex::ZERO));

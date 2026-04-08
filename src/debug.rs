@@ -14,6 +14,9 @@ pub struct HexGridDebugSettings {
     pub draw_centers: bool,
     pub draw_cell_outlines: bool,
     pub draw_path_lines: bool,
+    /// Reserved for future text label rendering.
+    ///
+    /// The current debug runtime only draws gizmos, so this flag has no effect yet.
     pub draw_coord_labels: bool,
     pub center_radius: f32,
 }

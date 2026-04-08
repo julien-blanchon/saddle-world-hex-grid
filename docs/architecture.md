@@ -147,7 +147,14 @@ Like pathfinding, FOV is caller-owned: the `is_blocking` closure decides which h
 
 ## Dense storage architecture
 
-`HexagonalMap<T>` provides O(1) indexed storage over a hexagonal region. Internally it uses a flat `Vec<T>` with row-by-row indexing. Each row of a hexagonal region has a known length, so the index for any `(q, r)` pair is computed by accumulating row lengths up to the target row, then offsetting within that row. This gives cache-friendly iteration and constant-time random access.
+`HexagonalMap<T>` provides O(1) indexed storage over a hexagonal region. Internally it uses a flat `Vec<T>` with row-by-row indexing plus a precomputed row-start table, so any `(q, r)` lookup becomes:
+
+1. translate into local coordinates around the map center
+2. compute the row index
+3. jump to the row start
+4. offset within that row
+
+This keeps random access constant-time while preserving a cache-friendly row-major iteration order.
 
 ## Grid topology architecture
 
@@ -189,6 +196,8 @@ The plugin is intentionally thin and optional.
 
 The runtime system caches corner and path geometry into an internal component, then draws with `bevy_gizmos` if the user has initialized the gizmo group. This keeps the public overlay surface simple while avoiding recomputing corners every frame for unchanged overlays.
 
+`draw_coord_labels` remains on `HexGridDebugSettings` as a forward-looking toggle, but the current runtime is intentionally gizmo-only. Label rendering would require an additional text-backed runtime surface, so the flag is currently a documented no-op rather than a half-implemented feature.
+
 ## Performance notes
 
 ### Complexity
@@ -202,6 +211,7 @@ The runtime system caches corner and path geometry into an internal component, t
 ### Current tradeoffs
 
 - `HashMap` and `BinaryHeap` are used from the standard library for the initial implementation.
+- `HexagonalMap` iteration streams coordinates directly from row-major storage order instead of allocating temporary coordinate lists.
 - Search internals are private so the crate can later switch to denser storage, reusable buffers, or bucketed queues without a public API break.
 - Shape APIs favor iterators, but some runtime overlay paths still collect into `Vec`s because debug rendering wants owned geometry snapshots.
 

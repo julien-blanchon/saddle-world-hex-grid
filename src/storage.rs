@@ -13,6 +13,7 @@ use crate::AxialHex;
 pub struct HexagonalMap<T> {
     center: AxialHex,
     radius: i32,
+    row_starts: Vec<usize>,
     data: Vec<T>,
 }
 
@@ -24,10 +25,11 @@ impl<T> HexagonalMap<T> {
         let radius_i = radius as i32;
         let count = 3 * (radius as usize) * (radius as usize + 1) + 1;
         let mut data = Vec::with_capacity(count);
+        let mut row_starts = Vec::with_capacity((radius_i * 2 + 1) as usize);
 
         for r in -radius_i..=radius_i {
-            let q_min = (-radius_i).max(-r - radius_i);
-            let q_max = radius_i.min(-r + radius_i);
+            row_starts.push(data.len());
+            let (q_min, q_max) = row_q_bounds(radius_i, r);
             for q in q_min..=q_max {
                 data.push(init(center + AxialHex::new(q, r)));
             }
@@ -36,6 +38,7 @@ impl<T> HexagonalMap<T> {
         Self {
             center,
             radius: radius_i,
+            row_starts,
             data,
         }
     }
@@ -74,16 +77,9 @@ impl<T> HexagonalMap<T> {
             return None;
         }
 
-        // Calculate flat index: sum of row lengths for rows before `r`,
-        // plus the offset within row `r`.
-        let mut idx = 0usize;
-        for row in -self.radius..r {
-            let q_min = (-self.radius).max(-row - self.radius);
-            let q_max = self.radius.min(-row + self.radius);
-            idx += (q_max - q_min + 1) as usize;
-        }
-        let q_min = (-self.radius).max(-r - self.radius);
-        idx += (q - q_min) as usize;
+        let row_index = (r + self.radius) as usize;
+        let (q_min, _) = row_q_bounds(self.radius, r);
+        let idx = self.row_starts[row_index] + (q - q_min) as usize;
 
         Some(idx)
     }
@@ -100,44 +96,12 @@ impl<T> HexagonalMap<T> {
 
     /// Iterates over all `(hex, value)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (AxialHex, &T)> {
-        let center = self.center;
-        let radius = self.radius;
-        let mut idx = 0;
-        let mut pairs = Vec::with_capacity(self.data.len());
-        for r in -radius..=radius {
-            let q_min = (-radius).max(-r - radius);
-            let q_max = radius.min(-r + radius);
-            for q in q_min..=q_max {
-                pairs.push((center + AxialHex::new(q, r), &self.data[idx]));
-                idx += 1;
-            }
-        }
-        pairs.into_iter()
+        HexagonalMapCoordsIter::new(self.center, self.radius).zip(self.data.iter())
     }
 
     /// Iterates over all `(hex, &mut value)` pairs.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (AxialHex, &mut T)> {
-        let center = self.center;
-        let radius = self.radius;
-        let mut idx = 0;
-        let mut row_starts = Vec::new();
-        for r in -radius..=radius {
-            let q_min = (-radius).max(-r - radius);
-            let q_max = radius.min(-r + radius);
-            row_starts.push((r, q_min, q_max, idx));
-            idx += (q_max - q_min + 1) as usize;
-        }
-
-        let data_ptr = self.data.as_mut_ptr();
-        let mut pairs = Vec::with_capacity(self.data.len());
-        for (r, q_min, q_max, start) in row_starts {
-            for (offset, q) in (q_min..=q_max).enumerate() {
-                // SAFETY: each index is accessed exactly once (no aliasing)
-                let value = unsafe { &mut *data_ptr.add(start + offset) };
-                pairs.push((center + AxialHex::new(q, r), value));
-            }
-        }
-        pairs.into_iter()
+        HexagonalMapCoordsIter::new(self.center, self.radius).zip(self.data.iter_mut())
     }
 }
 
@@ -162,6 +126,78 @@ impl<T: Default> HexagonalMap<T> {
     pub fn with_default(center: AxialHex, radius: u32) -> Self {
         Self::new(center, radius, |_| T::default())
     }
+}
+
+#[derive(Clone, Debug)]
+struct HexagonalMapCoordsIter {
+    center: AxialHex,
+    radius: i32,
+    q: i32,
+    r: i32,
+    current_q_max: i32,
+    finished: bool,
+}
+
+impl HexagonalMapCoordsIter {
+    fn new(center: AxialHex, radius: i32) -> Self {
+        let r = -radius;
+        let (q_min, q_max) = row_q_bounds(radius, r);
+        Self {
+            center,
+            radius,
+            q: q_min,
+            r,
+            current_q_max: q_max,
+            finished: false,
+        }
+    }
+}
+
+impl Iterator for HexagonalMapCoordsIter {
+    type Item = AxialHex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        let hex = self.center + AxialHex::new(self.q, self.r);
+
+        if self.q < self.current_q_max {
+            self.q += 1;
+        } else if self.r < self.radius {
+            self.r += 1;
+            let (q_min, q_max) = row_q_bounds(self.radius, self.r);
+            self.q = q_min;
+            self.current_q_max = q_max;
+        } else {
+            self.finished = true;
+        }
+
+        Some(hex)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.finished {
+            return (0, Some(0));
+        }
+
+        let remaining_rows = (self.radius - self.r).max(0) as usize;
+        let current_row_remaining = (self.current_q_max - self.q + 1).max(0) as usize;
+        let trailing = (1..=remaining_rows)
+            .map(|offset| {
+                let row = self.r + offset as i32;
+                let (q_min, q_max) = row_q_bounds(self.radius, row);
+                (q_max - q_min + 1) as usize
+            })
+            .sum::<usize>();
+        let remaining = current_row_remaining + trailing;
+        (remaining, Some(remaining))
+    }
+}
+
+fn row_q_bounds(radius: i32, r: i32) -> (i32, i32) {
+    ((-radius).max(-r - radius), radius.min(-r + radius))
 }
 
 #[cfg(test)]
