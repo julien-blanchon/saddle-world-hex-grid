@@ -114,6 +114,7 @@ Runtime debug resource used by the plugin.
 - `center_radius > 0.0`
 - use a radius smaller than the visual hex radius if you want the markers to stay inside the cell
 - if you only want path previews, disable center and outline drawing to reduce gizmo clutter
+- `draw_coord_labels` is reserved for future text rendering; the current gizmo-only debug runtime does not use it yet
 
 ### Example
 
@@ -294,6 +295,7 @@ Supports `Index<AxialHex>` and `IndexMut<AxialHex>` for direct access. Panics on
 ### Guidance
 
 - Prefer `HexagonalMap` over `HashMap<AxialHex, T>` when the region is known at construction time for better cache locality and O(1) access
+- `iter()` and `iter_mut()` follow the internal row-major order without allocating temporary coordinate buffers
 - The internal layout uses row-by-row flat indexing, so iteration order follows rows from bottom to top
 
 ## `GridEdge`
@@ -338,7 +340,7 @@ Canonical vertex shared by three adjacent hexes.
 
 ## Distance methods on `AxialHex`
 
-- `distance_to(other) -> i32` — Manhattan (hex) distance
+- `distance_to(other) -> u32` — Manhattan (hex) distance
 - `distance_sq_to(other) -> f32` — squared Euclidean distance (no sqrt, useful for comparisons and sorting)
 - `euclidean_distance_to(other) -> f32` — Euclidean distance between hex centers
 

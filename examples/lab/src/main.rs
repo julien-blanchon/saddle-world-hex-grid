@@ -6,13 +6,14 @@ mod scenarios;
 use saddle_world_hex_grid_example_support as support;
 
 use bevy::prelude::*;
-use saddle_pane::prelude::*;
 #[cfg(feature = "dev")]
 use bevy::remote::RemotePlugin;
 #[cfg(feature = "dev")]
 use bevy_brp_extras::BrpExtrasPlugin;
+use saddle_pane::prelude::*;
 use saddle_world_hex_grid::{
-    AxialHex, HexDebugOverlay, HexGridDebugSettings, HexGridPlugin, a_star, reachable_within,
+    AxialHex, HexDebugOverlay, HexDirection, HexGridDebugSettings, HexGridPlugin, a_star,
+    directional_fov, range_fov, reachable_within,
 };
 use std::collections::HashSet;
 use support::{BoardKind, DemoBoard, DemoHexCell, OverlayText};
@@ -30,6 +31,9 @@ struct PathOverlay;
 struct RangeOverlay;
 
 #[derive(Component)]
+struct FovOverlay;
+
+#[derive(Component)]
 struct SampleMarker {
     board: BoardKind,
 }
@@ -42,7 +46,16 @@ pub struct LabControl {
     pub reroute_barrier_enabled: bool,
     pub movement_budget: u32,
     pub range_radius: u32,
+    pub show_attack_range: bool,
+    pub fov_range: u32,
+    pub fov_directional_mode: bool,
+    pub fov_facing: HexDirection,
+    pub fov_viewer: AxialHex,
 }
+
+#[cfg(feature = "e2e")]
+#[derive(Resource, Clone, Debug, Default)]
+pub(crate) struct E2EControlOverride(pub Option<LabControl>);
 
 impl Default for LabControl {
     fn default() -> Self {
@@ -52,6 +65,11 @@ impl Default for LabControl {
             reroute_barrier_enabled: false,
             movement_budget: 4,
             range_radius: 3,
+            show_attack_range: false,
+            fov_range: 4,
+            fov_directional_mode: false,
+            fov_facing: HexDirection::East,
+            fov_viewer: AxialHex::ZERO,
         }
     }
 }
@@ -75,6 +93,14 @@ struct LabPane {
     movement_budget: f32,
     #[pane(slider, min = 1.0, max = 6.0, step = 1.0)]
     range_radius: f32,
+    #[pane(toggle)]
+    show_attack_range: bool,
+    #[pane(slider, min = 1.0, max = 6.0, step = 1.0)]
+    fov_range: f32,
+    #[pane(toggle)]
+    fov_directional_mode: bool,
+    #[pane(slider, min = 0.0, max = 5.0, step = 1.0)]
+    fov_facing_index: f32,
 }
 
 impl Default for LabPane {
@@ -88,6 +114,10 @@ impl Default for LabPane {
             reroute_barrier_enabled: false,
             movement_budget: 4.0,
             range_radius: 3.0,
+            show_attack_range: false,
+            fov_range: 4.0,
+            fov_directional_mode: false,
+            fov_facing_index: 0.0,
         }
     }
 }
@@ -100,9 +130,13 @@ pub struct LabDiagnostics {
     pub path_exists: bool,
     pub path_len: usize,
     pub path_cost: u32,
+    pub flat_neighbor_count: usize,
     pub reachable_count: usize,
     pub ring_count: usize,
     pub spiral_count: usize,
+    pub attack_count: usize,
+    pub fov_visible_count: usize,
+    pub fov_hidden_behind_wall: bool,
 }
 
 #[derive(Resource)]
@@ -111,10 +145,12 @@ struct LabScene {
     pointy: DemoBoard,
     path: DemoBoard,
     range: DemoBoard,
+    fov: DemoBoard,
     flat_overlay: Entity,
     pointy_overlay: Entity,
     path_overlay: Entity,
     range_overlay: Entity,
+    fov_overlay: Entity,
     default_material: Handle<ColorMaterial>,
     selected_material: Handle<ColorMaterial>,
     blocked_material: Handle<ColorMaterial>,
@@ -122,6 +158,10 @@ struct LabScene {
     path_material: Handle<ColorMaterial>,
     range_material: Handle<ColorMaterial>,
     ring_material: Handle<ColorMaterial>,
+    attack_material: Handle<ColorMaterial>,
+    wall_material: Handle<ColorMaterial>,
+    fov_visible_material: Handle<ColorMaterial>,
+    viewer_material: Handle<ColorMaterial>,
 }
 
 fn main() {
@@ -130,6 +170,8 @@ fn main() {
     app.insert_resource(LabControl::default());
     app.insert_resource(LabPane::default());
     app.insert_resource(LabDiagnostics::default());
+    #[cfg(feature = "e2e")]
+    app.insert_resource(E2EControlOverride::default());
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "hex_grid crate-local lab".into(),
@@ -158,8 +200,14 @@ fn main() {
     app.register_type::<LabControl>()
         .register_type::<LabDiagnostics>()
         .register_pane::<LabPane>()
-        .add_systems(Startup, setup)
-        .add_systems(Update, (sync_lab_pane, update_lab));
+        .add_systems(Startup, setup);
+    #[cfg(feature = "e2e")]
+    app.add_systems(
+        Update,
+        (sync_lab_pane, apply_e2e_control_override, update_lab).chain(),
+    );
+    #[cfg(not(feature = "e2e"))]
+    app.add_systems(Update, (sync_lab_pane, update_lab).chain());
     app.run();
 }
 
@@ -171,7 +219,7 @@ fn setup(
     support::spawn_camera(&mut commands, "Lab Camera");
     support::spawn_overlay(
         &mut commands,
-        "hex_grid lab\nTop row: flat-top and pointy-top world picking.\nRight: weighted A* preview.\nBottom: ring, spiral, and movement range diagnostics.",
+        "hex_grid lab\nTop row: flat-top and pointy-top world picking.\nRight: weighted A* preview.\nBottom left: ring, spiral, and movement range diagnostics.\nBottom right: FOV walls, viewer, and directional cone.",
     );
 
     let flat = support::spawn_demo_board(
@@ -221,6 +269,18 @@ fn setup(
             .with_origin(Vec2::new(-30.0, -250.0)),
         AxialHex::ZERO.hexagon(4),
         Color::srgb(0.15, 0.19, 0.24),
+    );
+    let fov = support::spawn_demo_board(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        BoardKind::Fov,
+        "Field Of View",
+        saddle_world_hex_grid::HexLayout::pointy()
+            .with_uniform_size(22.0)
+            .with_origin(Vec2::new(430.0, -230.0)),
+        AxialHex::ZERO.hexagon(5),
+        Color::srgb(0.12, 0.14, 0.18),
     );
 
     let marker_mesh = meshes.add(Circle::new(6.0));
@@ -296,16 +356,32 @@ fn setup(
             },
         ))
         .id();
+    let fov_overlay = commands
+        .spawn((
+            Name::new("FOV Debug Overlay"),
+            FovOverlay,
+            HexDebugOverlay {
+                layout: fov.layout,
+                cells: fov.coords.clone(),
+                cell_color: Color::srgba(0.26, 0.62, 0.96, 0.45),
+                highlight_color: Color::srgba(0.95, 0.73, 0.28, 0.95),
+                fov_color: Color::srgba(0.32, 0.84, 0.94, 0.75),
+                ..default()
+            },
+        ))
+        .id();
 
     commands.insert_resource(LabScene {
         flat,
         pointy,
         path,
         range,
+        fov,
         flat_overlay,
         pointy_overlay,
         path_overlay,
         range_overlay,
+        fov_overlay,
         default_material: materials.add(Color::srgb(0.15, 0.19, 0.24)),
         selected_material: materials.add(Color::srgb(0.92, 0.73, 0.26)),
         blocked_material: materials.add(Color::srgb(0.37, 0.14, 0.18)),
@@ -313,6 +389,10 @@ fn setup(
         path_material: materials.add(Color::srgb(0.26, 0.86, 0.55)),
         range_material: materials.add(Color::srgb(0.26, 0.68, 0.96)),
         ring_material: materials.add(Color::srgb(0.96, 0.70, 0.28)),
+        attack_material: materials.add(Color::srgba(0.90, 0.30, 0.25, 0.80)),
+        wall_material: materials.add(Color::srgb(0.35, 0.15, 0.15)),
+        fov_visible_material: materials.add(Color::srgb(0.30, 0.68, 0.86)),
+        viewer_material: materials.add(Color::srgb(0.92, 0.76, 0.24)),
     });
 }
 
@@ -327,6 +407,7 @@ fn update_lab(
 ) {
     let path_blocked = path_blocked_cells(control.reroute_barrier_enabled);
     let weighted_cells = weighted_path_cells();
+    let fov_walls = fov_wall_cells();
     let flat_world = scene.flat.layout.origin + control.sample_local_point;
     let pointy_world = scene.pointy.layout.origin + control.sample_local_point;
     let flat_hover = scene.flat.layout.world_to_hex(flat_world);
@@ -356,15 +437,45 @@ fn update_lab(
         .as_ref()
         .map(|path| path.cells.iter().copied().collect())
         .unwrap_or_default();
+    let flat_neighbors: HashSet<_> = flat_hover
+        .neighbors()
+        .into_iter()
+        .filter(|hex| scene.flat.cells.contains_key(hex))
+        .collect();
+    let attack_range: HashSet<_> = reachable_set
+        .iter()
+        .flat_map(|hex| hex.neighbors())
+        .filter(|hex| !reachable_set.contains(hex) && scene.range.cells.contains_key(hex))
+        .collect();
+    let fov_visible = if control.fov_directional_mode {
+        directional_fov(
+            control.fov_viewer,
+            control.fov_range,
+            control.fov_facing,
+            |hex| fov_walls.contains(&hex),
+        )
+    } else {
+        range_fov(control.fov_viewer, control.fov_range, |hex| {
+            fov_walls.contains(&hex)
+        })
+    };
+    let fov_visible_on_board: HashSet<_> = fov_visible
+        .into_iter()
+        .filter(|hex| scene.fov.cells.contains_key(hex))
+        .collect();
 
     diagnostics.flat_hover_hex = flat_hover;
     diagnostics.pointy_hover_hex = pointy_hover;
     diagnostics.path_exists = path.is_some();
     diagnostics.path_len = path.as_ref().map_or(0, |path| path.cells.len());
     diagnostics.path_cost = path.as_ref().map_or(0, |path| path.total_cost);
+    diagnostics.flat_neighbor_count = flat_neighbors.len();
     diagnostics.reachable_count = range_reachable.len();
     diagnostics.ring_count = ring.len();
     diagnostics.spiral_count = spiral.len();
+    diagnostics.attack_count = attack_range.len();
+    diagnostics.fov_visible_count = fov_visible_on_board.len();
+    diagnostics.fov_hidden_behind_wall = !fov_visible_on_board.contains(&AxialHex::new(3, 0));
 
     for (marker, mut transform) in &mut markers {
         transform.translation = match marker.board {
@@ -377,6 +488,7 @@ fn update_lab(
     for (cell, mut material) in &mut cells {
         let next = match cell.board {
             BoardKind::Flat if cell.hex == flat_hover => scene.selected_material.clone(),
+            BoardKind::Flat if flat_neighbors.contains(&cell.hex) => scene.range_material.clone(),
             BoardKind::Flat => scene.default_material.clone(),
             BoardKind::Pointy if cell.hex == pointy_hover => scene.selected_material.clone(),
             BoardKind::Pointy => scene.default_material.clone(),
@@ -390,16 +502,25 @@ fn update_lab(
             }
             BoardKind::Path => scene.default_material.clone(),
             BoardKind::Range if cell.hex == AxialHex::ZERO => scene.selected_material.clone(),
+            BoardKind::Range if control.show_attack_range && attack_range.contains(&cell.hex) => {
+                scene.attack_material.clone()
+            }
             BoardKind::Range if ring.contains(&cell.hex) => scene.ring_material.clone(),
             BoardKind::Range if reachable_set.contains(&cell.hex) => scene.range_material.clone(),
             BoardKind::Range => scene.default_material.clone(),
+            BoardKind::Fov if cell.hex == control.fov_viewer => scene.viewer_material.clone(),
+            BoardKind::Fov if fov_walls.contains(&cell.hex) => scene.wall_material.clone(),
+            BoardKind::Fov if fov_visible_on_board.contains(&cell.hex) => {
+                scene.fov_visible_material.clone()
+            }
+            BoardKind::Fov => scene.default_material.clone(),
             BoardKind::Primary => scene.default_material.clone(),
         };
         material.0 = next;
     }
 
     if let Ok(mut flat_overlay) = overlays.get_mut(scene.flat_overlay) {
-        flat_overlay.highlighted = vec![flat_hover];
+        flat_overlay.highlighted = std::iter::once(flat_hover).chain(flat_neighbors).collect();
         flat_overlay.path.clear();
     }
     if let Ok(mut pointy_overlay) = overlays.get_mut(scene.pointy_overlay) {
@@ -415,18 +536,33 @@ fn update_lab(
     }
     if let Ok(mut range_overlay) = overlays.get_mut(scene.range_overlay) {
         range_overlay.cells = reachable_set.iter().copied().collect();
-        range_overlay.highlighted = ring.clone();
-        range_overlay.path = spiral.clone();
+        range_overlay.highlighted = if control.show_attack_range {
+            attack_range.iter().copied().collect()
+        } else {
+            ring.clone()
+        };
+        range_overlay.path = if control.show_attack_range {
+            Vec::new()
+        } else {
+            spiral.clone()
+        };
+    }
+    if let Ok(mut fov_overlay) = overlays.get_mut(scene.fov_overlay) {
+        fov_overlay.cells = scene.fov.coords.clone();
+        fov_overlay.highlighted = vec![control.fov_viewer];
+        fov_overlay.path.clear();
+        fov_overlay.fov_cells = fov_visible_on_board.iter().copied().collect();
     }
 
     overlay_text.0 = format!(
-        "hex_grid lab\nsample local ({:.1}, {:.1}) -> flat ({}, {}) / pointy ({}, {})\npath goal ({}, {})  exists {}  len {}  cost {}\nmovement budget {}  reachable {}  ring {}  spiral {}",
+        "hex_grid lab\nsample local ({:.1}, {:.1}) -> flat ({}, {}) / pointy ({}, {})  flat neighbors {}\npath goal ({}, {})  exists {}  len {}  cost {}\nmovement budget {}  reachable {}  ring {}  spiral {}  attack {}\nfov mode {}  facing {:?}  range {}  visible {}",
         control.sample_local_point.x,
         control.sample_local_point.y,
         diagnostics.flat_hover_hex.q,
         diagnostics.flat_hover_hex.r,
         diagnostics.pointy_hover_hex.q,
         diagnostics.pointy_hover_hex.r,
+        diagnostics.flat_neighbor_count,
         control.path_goal.q,
         control.path_goal.r,
         diagnostics.path_exists,
@@ -436,6 +572,15 @@ fn update_lab(
         diagnostics.reachable_count,
         diagnostics.ring_count,
         diagnostics.spiral_count,
+        diagnostics.attack_count,
+        if control.fov_directional_mode {
+            "directional"
+        } else {
+            "360"
+        },
+        control.fov_facing,
+        control.fov_range,
+        diagnostics.fov_visible_count,
     );
 }
 
@@ -455,11 +600,16 @@ fn sync_lab_pane(
     control.reroute_barrier_enabled = pane.reroute_barrier_enabled;
     control.movement_budget = pane.movement_budget.round().max(1.0) as u32;
     control.range_radius = pane.range_radius.round().max(1.0) as u32;
+    control.show_attack_range = pane.show_attack_range;
+    control.fov_range = pane.fov_range.round().max(1.0) as u32;
+    control.fov_directional_mode = pane.fov_directional_mode;
+    control.fov_facing = HexDirection::ALL[pane.fov_facing_index.round() as usize % 6];
 
     support::apply_hex_size(&mut scene.flat, pane.hex_size, &mut cell_transforms);
     support::apply_hex_size(&mut scene.pointy, pane.hex_size, &mut cell_transforms);
     support::apply_hex_size(&mut scene.path, pane.hex_size, &mut cell_transforms);
     support::apply_hex_size(&mut scene.range, pane.hex_size, &mut cell_transforms);
+    support::apply_hex_size(&mut scene.fov, pane.hex_size, &mut cell_transforms);
 
     if let Ok(mut overlay) = overlays.get_mut(scene.flat_overlay) {
         overlay.layout = scene.flat.layout;
@@ -472,6 +622,19 @@ fn sync_lab_pane(
     }
     if let Ok(mut overlay) = overlays.get_mut(scene.range_overlay) {
         overlay.layout = scene.range.layout;
+    }
+    if let Ok(mut overlay) = overlays.get_mut(scene.fov_overlay) {
+        overlay.layout = scene.fov.layout;
+    }
+}
+
+#[cfg(feature = "e2e")]
+fn apply_e2e_control_override(
+    override_control: Res<E2EControlOverride>,
+    mut control: ResMut<LabControl>,
+) {
+    if let Some(snapshot) = &override_control.0 {
+        *control = snapshot.clone();
     }
 }
 
@@ -499,5 +662,18 @@ fn weighted_path_cells() -> HashSet<AxialHex> {
         AxialHex::new(-1, 2),
         AxialHex::new(0, 2),
         AxialHex::new(1, -2),
+    ])
+}
+
+pub(crate) fn fov_wall_cells() -> HashSet<AxialHex> {
+    HashSet::from([
+        AxialHex::new(2, 0),
+        AxialHex::new(2, -1),
+        AxialHex::new(2, -2),
+        AxialHex::new(-1, 3),
+        AxialHex::new(0, 3),
+        AxialHex::new(1, 2),
+        AxialHex::new(-3, 1),
+        AxialHex::new(-3, 2),
     ])
 }

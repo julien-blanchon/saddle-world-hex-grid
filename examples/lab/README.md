@@ -7,6 +7,7 @@ It keeps the richer runtime surface inside the shared crate:
 - flat-top and pointy-top layout comparison with a shared sample point
 - weighted A* path preview with deterministic blockers
 - ring, spiral, and movement-range overlays
+- field-of-view showcase with walls, viewer position, and directional cone mode
 - BRP enabled in `dev`
 - E2E scenarios behind the `e2e` feature
 
@@ -21,9 +22,13 @@ cargo run -p saddle-world-hex-grid-lab
 ```bash
 cargo run -p saddle-world-hex-grid-lab --features e2e -- smoke_launch
 cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_smoke
+cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_basic
 cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_layouts
 cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_pathfinding
 cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_ranges
+cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_fov
+cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_strategy
+cargo run -p saddle-world-hex-grid-lab --features e2e -- hex_grid_storage
 ```
 
 ## BRP

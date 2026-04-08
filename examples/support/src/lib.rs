@@ -10,6 +10,7 @@ pub enum BoardKind {
     Pointy,
     Path,
     Range,
+    Fov,
 }
 
 #[derive(Component, Clone, Copy, Debug)]
