@@ -176,7 +176,7 @@ impl AxialHex {
 
     /// Determines which diagonal direction `other` lies in relative to `self`.
     ///
-    /// Returns a [`DiagonalWay`] indicating either a single diagonal direction
+    /// Returns a [`crate::DiagonalWay`] indicating either a single diagonal direction
     /// or a tie between two directions when the hex is on a sector boundary.
     pub fn diagonal_way_to(self, other: Self) -> crate::fov::DiagonalWay {
         crate::fov::diagonal_way(self, other)
