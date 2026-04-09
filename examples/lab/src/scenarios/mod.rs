@@ -57,6 +57,57 @@ fn set_control(mutator: impl Fn(&mut LabControl) + Send + Sync + 'static) -> Act
     }))
 }
 
+fn set_sample_point(point: Vec2) -> Action {
+    set_control(move |control| {
+        control.sample_local_point = point;
+    })
+}
+
+fn set_path_goal(goal: AxialHex, reroute_barrier_enabled: bool) -> Action {
+    set_control(move |control| {
+        control.path_goal = goal;
+        control.reroute_barrier_enabled = reroute_barrier_enabled;
+    })
+}
+
+fn set_range_mode(movement_budget: u32, range_radius: u32) -> Action {
+    set_control(move |control| {
+        control.movement_budget = movement_budget;
+        control.range_radius = range_radius;
+    })
+}
+
+fn set_fov_mode(viewer: AxialHex, range: u32, directional_mode: bool, facing: HexDirection) -> Action {
+    set_control(move |control| {
+        control.fov_viewer = viewer;
+        control.fov_range = range;
+        control.fov_directional_mode = directional_mode;
+        control.fov_facing = facing;
+    })
+}
+
+fn set_strategy_mode(
+    goal: AxialHex,
+    movement_budget: u32,
+    range_radius: u32,
+    attack_range: bool,
+    reroute_barrier_enabled: bool,
+) -> Action {
+    set_control(move |control| {
+        control.show_attack_range = attack_range;
+        control.movement_budget = movement_budget;
+        control.range_radius = range_radius;
+        control.path_goal = goal;
+        control.reroute_barrier_enabled = reroute_barrier_enabled;
+    })
+}
+
+fn set_attack_range_visible(visible: bool) -> Action {
+    set_control(move |control| {
+        control.show_attack_range = visible;
+    })
+}
+
 fn wait_for_diagnostics(
     label: impl Into<String>,
     condition: impl Fn(&crate::LabDiagnostics) -> bool + Send + Sync + 'static,
@@ -126,9 +177,7 @@ fn hex_grid_basic() -> Scenario {
     Scenario::builder("hex_grid_basic")
         .description("Move the shared sample point across the flat board, verify the hovered hex and its six neighbors update together, and capture the basic interaction state.")
         .then(wait_for_lab_ready("lab ready for basic interaction"))
-        .then(set_control(|control| {
-            control.sample_local_point = Vec2::new(34.0, -8.0);
-        }))
+        .then(set_sample_point(Vec2::new(34.0, -8.0)))
         .then(wait_for_diagnostics("basic hover ready", |diagnostics| {
             diagnostics.flat_hover_hex == AxialHex::new(1, -1)
                 && diagnostics.flat_neighbor_count == 6
@@ -151,9 +200,7 @@ fn hex_grid_layouts() -> Scenario {
     Scenario::builder("hex_grid_layouts")
         .description("Capture both the shared-origin case and an offset case to prove flat-top and pointy-top layouts map the same local point differently.")
         .then(wait_for_lab_ready("lab ready for layout comparison"))
-        .then(set_control(|control| {
-            control.sample_local_point = Vec2::ZERO;
-        }))
+        .then(set_sample_point(Vec2::ZERO))
         .then(wait_for_diagnostics("shared origin mapping", |diagnostics| {
             diagnostics.flat_hover_hex == AxialHex::ZERO
                 && diagnostics.pointy_hover_hex == AxialHex::ZERO
@@ -168,9 +215,7 @@ fn hex_grid_layouts() -> Scenario {
         ))
         .then(Action::Screenshot("layouts_origin".into()))
         .then(Action::WaitFrames(1))
-        .then(set_control(|control| {
-            control.sample_local_point = Vec2::new(36.0, -12.0);
-        }))
+        .then(set_sample_point(Vec2::new(36.0, -12.0)))
         .then(wait_for_diagnostics("offset mapping", |diagnostics| {
             diagnostics.flat_hover_hex == AxialHex::new(1, -1)
                 && diagnostics.pointy_hover_hex == AxialHex::new(1, 0)
@@ -193,20 +238,14 @@ fn hex_grid_pathfinding() -> Scenario {
     Scenario::builder("hex_grid_pathfinding")
         .description("Capture the default route first, then enable a reroute barrier and verify that A* still finds a longer path around the new blockers.")
         .then(wait_for_lab_ready("lab ready for pathfinding"))
-        .then(set_control(|control| {
-            control.path_goal = AxialHex::new(3, -2);
-            control.reroute_barrier_enabled = false;
-        }))
+        .then(set_path_goal(AxialHex::new(3, -2), false))
         .then(wait_for_diagnostics("default path", |diagnostics| {
             diagnostics.path_exists && diagnostics.path_len == 6 && diagnostics.path_cost == 5
         }))
         .then(Action::WaitFrames(1))
         .then(Action::Screenshot("path_default".into()))
         .then(Action::WaitFrames(1))
-        .then(set_control(|control| {
-            control.path_goal = AxialHex::new(4, -2);
-            control.reroute_barrier_enabled = true;
-        }))
+        .then(set_path_goal(AxialHex::new(4, -2), true))
         .then(wait_for_diagnostics("rerouted path", |diagnostics| {
             diagnostics.path_exists && diagnostics.path_len == 8 && diagnostics.path_cost == 7
         }))
@@ -232,10 +271,7 @@ fn hex_grid_ranges() -> Scenario {
     Scenario::builder("hex_grid_ranges")
         .description("Capture a tight range pass first, then expand the movement budget and ring radius to prove the overlay scales correctly.")
         .then(wait_for_lab_ready("lab ready for range checks"))
-        .then(set_control(|control| {
-            control.movement_budget = 2;
-            control.range_radius = 2;
-        }))
+        .then(set_range_mode(2, 2))
         .then(wait_for_diagnostics("tight range state", |diagnostics| {
             diagnostics.reachable_count == 15
                 && diagnostics.ring_count == 12
@@ -255,10 +291,7 @@ fn hex_grid_ranges() -> Scenario {
         ))
         .then(Action::Screenshot("ranges_tight".into()))
         .then(Action::WaitFrames(1))
-        .then(set_control(|control| {
-            control.movement_budget = 4;
-            control.range_radius = 3;
-        }))
+        .then(set_range_mode(4, 3))
         .then(wait_for_diagnostics("expanded range state", |diagnostics| {
             diagnostics.ring_count == 18
                 && diagnostics.spiral_count == 37
@@ -286,12 +319,7 @@ fn hex_grid_fov() -> Scenario {
     Scenario::builder("hex_grid_fov")
         .description("Drive the lab's FOV board through both 360-degree and directional modes, capture each state, and verify the rendered visible set matches the algorithmic expectation.")
         .then(wait_for_lab_ready("lab ready for fov"))
-        .then(set_control(|control| {
-            control.fov_viewer = AxialHex::ZERO;
-            control.fov_range = 4;
-            control.fov_directional_mode = false;
-            control.fov_facing = HexDirection::East;
-        }))
+        .then(set_fov_mode(AxialHex::ZERO, 4, false, HexDirection::East))
         .then(wait_for_diagnostics("range fov ready", |diagnostics| {
             diagnostics.fov_visible_count == expected_range_fov_visible_count()
         }))
@@ -303,10 +331,12 @@ fn hex_grid_fov() -> Scenario {
         .then(Action::WaitFrames(1))
         .then(Action::Screenshot("fov_range".into()))
         .then(Action::WaitFrames(1))
-        .then(set_control(|control| {
-            control.fov_directional_mode = true;
-            control.fov_facing = HexDirection::East;
-        }))
+        .then(set_fov_mode(
+            AxialHex::ZERO,
+            4,
+            true,
+            HexDirection::East,
+        ))
         .then(wait_for_diagnostics("directional fov ready", |diagnostics| {
             diagnostics.fov_visible_count == expected_directional_fov_visible_count(HexDirection::East)
         }))
@@ -328,13 +358,7 @@ fn hex_grid_strategy() -> Scenario {
     Scenario::builder("hex_grid_strategy")
         .description("Switch the range board into strategy mode, verify reachability and attack coverage render together with the weighted path preview, and capture the tactical showcase.")
         .then(wait_for_lab_ready("lab ready for strategy"))
-        .then(set_control(|control| {
-            control.show_attack_range = true;
-            control.movement_budget = 4;
-            control.range_radius = 3;
-            control.path_goal = AxialHex::new(3, -2);
-            control.reroute_barrier_enabled = false;
-        }))
+        .then(set_strategy_mode(AxialHex::new(3, -2), 4, 3, true, false))
         .then(wait_for_diagnostics("strategy state ready", |diagnostics| {
             diagnostics.path_exists
                 && diagnostics.path_cost == 5
@@ -355,9 +379,7 @@ fn hex_grid_strategy() -> Scenario {
         ))
         .then(Action::Screenshot("strategy".into()))
         .then(Action::WaitFrames(1))
-        .then(set_control(|control| {
-            control.show_attack_range = false;
-        }))
+        .then(set_attack_range_visible(false))
         .then(assertions::log_summary("hex_grid_strategy"))
         .build()
 }
